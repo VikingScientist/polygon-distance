@@ -46,84 +46,30 @@ function Vertex(x,y,z) {
 function Edge(i,j) {
 	// class variables
 	this.vertex = [];
+	this.face   = [];
+	this.nextFaceVertex = [];
+	this.intVertices = [];
 
 	// class functions
 	this.equals = equals;
 
 	function equals(l) {
-		return (this.i==l.i && this.j==l.j) || (this.i==l.j && this.j==l.i);
+		return (this.vertex[0]==l.vertex[0] && this.vertex[1]==l.vertex[1]) ||
+		       (this.vertex[0]==l.vertex[1] && this.vertex[1]==l.vertex[0]);
 	}
 }
 
-
-
 function Face(vertices) {
 	// class variables
-	this.vertices = vertices;
+	this.vertices    = vertices;
+	this.edge        = [];
+	this.intVertices = [];
 	
 	// class functions
 	this.addVertex      = addVertex;
 	this.containsVertex = containsVertex;
 	this.reorderVertex  = reorderVertex;
 
-	function addVertex(p) {
-		var exist = false;
-		for(var i in this.vertices) {
-			if(this.vertices[i] == p) {
-				exist = true;
-				break;
-			}
-		}
-		if(!exist)
-			this.vertices.push(p);
-	}
-
-	function containsVertex(p) {
-		var result;
-	}
-
-	function reorderVertex(coordinates) {
-		var d = 1e10;
-		var p0 = coordinates.pts[this.vertices[0]];
-		for(var i=1; i<this.vertices.length; i++) {
-			var newDist = p0.dist(coordinates.pts[this.vertices[i]]);
-			d = (d<newDist) ? d : newDist;
-		}
-	}
 }
 
-
-function VertexSet() {
-	// class variables
-	this.pts = []
-
-	// class functions
-	this.push = push;
-	this.dump = dump;
-
-	function push(p) {
-		var exist = false;
-		for( var i in this.pts ) {
-			if(this.pts[i].dist(p) < 1e-10) {
-				exist = true;
-			}
-		}
-		if(!exist) {
-			this.pts.push(p);
-			return this.pts.length;
-		} else {
-			return i;
-		}
-	}
-	
-	function dump() {
-		var result = [];
-		for(var i in this.pts) {
-			for(var j in this.pts[i].x) {
-				result.push(this.pts[i].x[j]);
-			}
-		}
-		return result;
-	}
-}
 

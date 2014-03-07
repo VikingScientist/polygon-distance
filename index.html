@@ -350,8 +350,37 @@
 		}
 	}
 
-	function bevelGeometry() {
-	}
+	function initIcosahedron() {
+		var phi = (1+Math.sqrt(5.0))/2.0;
+		var pts = [ 0,   1,   phi, 
+		            0,  -1,   phi, 
+		            0,   1,  -phi, 
+		            0,  -1,  -phi, 
+		             1,   phi, 0,  
+		            -1,   phi, 0,  
+		             1,  -phi, 0,  
+		            -1,  -phi, 0,  
+		            phi, 0,   1, 
+		           -phi, 0,   1,
+		            phi, 0,  -1,
+		           -phi, 0,  -1];
+		var indx = [0,  8,  1,      0,  1,  9,      0,  4,  8,      0,  5,  4,  
+                    0,  9,  5,      2, 11,  3,      2,  5, 11,      2,  4,  5,  
+                    2, 10,  4,      2,  3, 10,      1,  7,  9,      1,  6,  7,  
+                    1,  8,  6,      3,  6, 10,      3,  7,  6,      3, 11,  7,  
+                    4, 10,  8,      5,  9, 11,      6,  8, 10,      7, 11,  9];
+
+		for(var i=0; i<indx.length/3; i++) {
+			var locPt = [];
+			for(var j=0; j<3; j++) {
+				var k = indx[i*3+j];
+				locPt.push(pts[3*k  ]);
+				locPt.push(pts[3*k+1]);
+				locPt.push(pts[3*k+2]);
+			}
+			polygons.push(new Polygon(locPt));
+		}
+    }
 
 	function tick() {
         requestAnimFrame(tick);
@@ -363,7 +392,7 @@
         var canvas = document.getElementById("civ6");
         initGL(canvas);
         initShaders();
-		initDodecahedron();
+		initIcosahedron();
         initBuffers();
         initLigthing();
 
