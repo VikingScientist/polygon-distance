@@ -1,0 +1,389 @@
+<html>
+
+<head>
+<title>Learning WebGL &mdash; lesson 1</title>
+<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+
+<script type="text/javascript" src="glMatrix-0.9.5.min.js"></script>
+<script type="text/javascript" src="webgl-utils.js"></script>
+<script type="text/javascript" src="primitives.js"></script>
+
+<script id="shader-fs" type="x-shader/x-fragment">
+    precision mediump float;
+    varying vec3 vColor;
+
+    void main(void) {
+        gl_FragColor = vec4(vColor.x, vColor.y, vColor.z, 1.0);
+    }
+</script>
+
+<script id="shader-vs" type="x-shader/x-vertex">
+    attribute vec3 aVertexPosition;
+    attribute vec3 aColor;
+    attribute vec3 aNormal;
+    varying vec3 vColor;
+
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+    uniform mat3 uNMatrix;
+
+    uniform vec3 uLightingDirection;
+    uniform vec3 uDiffuseColor;
+    uniform float uDiffuseAmount;
+
+    uniform vec3 uAmbientColor;
+    uniform float uAmbientAmount;
+
+    void main(void) {
+        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+		vec3 n = uNMatrix * aNormal;
+		normalize(uLightingDirection);
+		vec3 diffuse = max(dot(n,uLightingDirection), 0.0) * uDiffuseColor;
+		vec3 ambient = uAmbientAmount * uAmbientColor;
+		vColor = .5*aNormal+.5;
+		// vColor = diffuse + uAmbientColor*uAmbientAmount;
+		// vColor = (diffuse + ambient) * aColor;
+		// vColor = .5*aVertexPosition + .5;
+		// vColor = aColor;
+		// vColor = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+    }
+</script>
+
+
+<script type="text/javascript">
+
+	function Polygon(pts) {
+		this.pts = pts;
+		var u = [pts[6]-pts[3], pts[7]-pts[4], pts[8]-pts[5]];
+		var v = [pts[3]-pts[0], pts[4]-pts[1], pts[5]-pts[2]];
+		// evaluate normal vector and normalize it
+		this.nor = [u[1]*v[2] - u[2]*v[1],
+		            u[2]*v[0] - u[0]*v[2],
+		            u[0]*v[1] - u[1]*v[0]];
+		var len = Math.sqrt(this.nor[0]*this.nor[0] + this.nor[1]*this.nor[1] + this.nor[2]*this.nor[2]);
+		this.nor[0] /= len;
+		this.nor[1] /= len;
+		this.nor[2] /= len;
+		// document.write("<br>" + this.nor[0] + ", " + this.nor[1] + ", " + this.nor[2]);
+		/*
+		for (var i in this.pts) {
+			document.write( this.pts[i] + ", ");
+			if(i%3 == 2)
+				document.write("<br>");
+		}
+		document.write("<br>");
+		document.write("<br>");
+		*/
+	}
+
+    var gl;
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("experimental-webgl");
+            gl.viewportWidth = canvas.width;
+            gl.viewportHeight = canvas.height;
+        } catch (e) {
+        }
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    }
+
+
+    function getShader(gl, id) {
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+
+        var str = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                str += k.textContent;
+            }
+            k = k.nextSibling;
+        }
+
+        var shader;
+        if (shaderScript.type == "x-shader/x-fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } else if (shaderScript.type == "x-shader/x-vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } else {
+            return null;
+        }
+
+        gl.shaderSource(shader, str);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(gl.getShaderInfoLog(shader));
+            return null;
+        }
+
+        return shader;
+    }
+
+
+    var shaderProgram;
+
+    function initShaders() {
+        var fragmentShader = getShader(gl, "shader-fs");
+        var vertexShader   = getShader(gl, "shader-vs");
+
+        shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+
+        gl.useProgram(shaderProgram);
+
+        shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+        gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+        shaderProgram.colorAttribute = gl.getAttribLocation(shaderProgram, "aColor");
+        gl.enableVertexAttribArray(shaderProgram.colorAttribute);
+
+        shaderProgram.normalAttribute = gl.getAttribLocation(shaderProgram, "aNormal");
+        gl.enableVertexAttribArray(shaderProgram.normalAttribute);
+
+        shaderProgram.pMatrixUniform  = gl.getUniformLocation(shaderProgram,  "uPMatrix");
+        shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+        shaderProgram.nMatrixUniform  = gl.getUniformLocation(shaderProgram,  "uNMatrix");
+
+        shaderProgram.lightDirectionUniform = gl.getUniformLocation(shaderProgram,  "uLightingDirection");
+        shaderProgram.diffuseAmountUniform  = gl.getUniformLocation(shaderProgram,  "uDiffuseAmount");
+        shaderProgram.ambientAmountUniform  = gl.getUniformLocation(shaderProgram,  "uAmbientAmount");
+        shaderProgram.diffuseColorUniform   = gl.getUniformLocation(shaderProgram,  "uDiffuseColor");
+        shaderProgram.ambientColorUniform   = gl.getUniformLocation(shaderProgram,  "uAmbientColor");
+    }
+
+
+    var mvMatrix = mat4.create();
+    var pMatrix = mat4.create();
+    var normalMatrix = mat3.create();
+
+    function setMatrixUniforms() {
+        gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+        gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+		mat4.toInverseMat3(mvMatrix, normalMatrix);
+		mat3.transpose(normalMatrix);
+        gl.uniformMatrix3fv(shaderProgram.nMatrixUniform, false, normalMatrix);
+    }
+
+
+
+    var vertexPositionBuffer;
+    var colorBuffer;
+    var normalBuffer;
+    var indexBuffer;
+
+    function initBuffers() {
+		var vertices = [];
+		var color    = [];
+		var normal   = [];
+		var indices  = [];
+		var globI    = 0;
+		// document.write("<br>Starting");
+		for(var i in polygons) {
+			var sides = polygons[i].pts.length/3;
+			// document.write("<br>Polygon #" + i);
+			var col = [Math.random(), Math.random(), Math.random()];
+			for(var j=0; j<sides; j++) {
+				vertices.push(polygons[i].pts[3*j]);
+				vertices.push(polygons[i].pts[3*j+1]);
+				vertices.push(polygons[i].pts[3*j+2]);
+				// color.push(col[0]); color.push(col[1]); color.push(col[2]);
+				color.push(.8);
+				color.push(.1);
+				color.push(.3);
+				normal.push(polygons[i].nor[0]);
+				normal.push(polygons[i].nor[1]);
+				normal.push(polygons[i].nor[2]);
+				// document.write("<br>  side #" + j);
+			}
+			for(var j=0; j<sides-2; j++) {
+				indices.push(globI + 0);
+				indices.push(globI + j+1);
+				indices.push(globI + j+2);
+			}
+			globI += sides;
+		}
+
+        vertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertexPositionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+        vertexPositionBuffer.itemSize = 3;
+        vertexPositionBuffer.numItems = vertices.length/3;
+
+        colorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(color), gl.STATIC_DRAW);
+        colorBuffer.itemSize = 3;
+        colorBuffer.numItems = color.length/3;
+
+        normalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normal), gl.STATIC_DRAW);
+        normalBuffer.itemSize = 3;
+        normalBuffer.numItems = normal.length/3;
+
+		indexBuffer = gl.createBuffer();
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+        indexBuffer.itemSize = 1;
+        indexBuffer.numItems = indices.length;
+
+		// document.write("<br>ll done");
+    }
+
+	function initLigthing() {
+		var ambientAmount = 0.2
+		var ambientColor = vec3.create([1.0, 1.0, 1.0]);
+		var diffuseAmount = 0.5
+		var diffuseColor = vec3.create([1.0, 1.0, 1.0]);
+		var lightDir     = vec3.create([-1.0, -1.0,  1.0]);
+		// vec3.nomralize(lightDir);
+        gl.uniform3fv(shaderProgram.lightDirectionUniform, lightDir);
+        gl.uniform3fv(shaderProgram.ambientColorUniform, ambientColor);
+        gl.uniform3fv(shaderProgram.diffuseColorUniform, diffuseColor);
+        gl.uniform1f(shaderProgram.diffuseAmountUniform, diffuseAmount);
+        gl.uniform1f(shaderProgram.ambientAmountUniform, ambientAmount);
+	}
+
+	var camR     = 5.0;
+	var camPhi   = Math.PI / 3;
+	var camTheta = 0.00;
+    function drawScene() {
+		// clear scene
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+		// setup camera
+        mat4.perspective(60, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+        mat4.identity(mvMatrix);
+        mat4.translate(mvMatrix, [0.0, 0.0, -camR]);
+        mat4.rotate(mvMatrix, -camPhi, [1.0, 0.0, 0.0]);
+        mat4.rotate(mvMatrix, camTheta, [0.0, 0.0, 1.0]);
+
+		// set color
+        gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+        gl.vertexAttribPointer(shaderProgram.colorAttribute, colorBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+		// set position
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertexPositionBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, vertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+		// set normals
+        gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+        gl.vertexAttribPointer(shaderProgram.normalAttribute, normalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+		// set indices
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+		
+		// make drawcall
+        setMatrixUniforms();
+        gl.drawElements(gl.TRIANGLES, indexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+    }
+
+	var lastTime = 0;
+	function animate() {
+		var nowTime = new Date().getTime();
+		if (lastTime != 0) {
+			var elapsed = nowTime - lastTime;
+
+			// camPhi   += 2*Math.PI*elapsed / 32000.0;
+			camTheta += 2*Math.PI*elapsed / 6000.0;
+		}
+		lastTime = nowTime;
+	}
+
+	var polygons = [];
+	function initDodecahedron() {
+		var phi = (1+Math.sqrt(5.0))/2.0;
+		var pts = [ 1.0, 1.0, 1.0, 
+		            1.0,-1.0, 1.0, 
+		            1.0, 1.0,-1.0, 
+		            1.0,-1.0,-1.0, 
+		           -1.0, 1.0, 1.0,  // pts[4]
+		           -1.0,-1.0, 1.0, 
+		           -1.0, 1.0,-1.0, 
+		           -1.0,-1.0,-1.0, 
+		              0, 1.0/phi, phi, // pts[8]
+		              0,-1.0/phi, phi,
+		              0, 1.0/phi,-phi,
+		              0,-1.0/phi,-phi,
+		            1.0/phi,  phi, 0, // pts[12]
+		           -1.0/phi,  phi, 0,
+		            1.0/phi, -phi, 0,
+		           -1.0/phi, -phi, 0,
+		            phi, 0,   1.0/phi, //pts[16]
+		            phi, 0,  -1.0/phi,
+		           -phi, 0,   1.0/phi,
+		           -phi, 0,  -1.0/phi];
+		var indx = [15, 14, 3, 11, 7,
+		            14, 3, 17, 16, 1,
+		        	17, 16, 0, 12, 2,
+					3, 17, 2, 10, 11,
+					7, 11, 10, 6, 19,
+					10, 2, 12, 13, 6,
+					1, 9, 8, 0, 16,
+					9, 5, 18, 4, 8,
+					8, 4, 13, 12, 0,
+					5, 15, 7, 19, 18,
+					4, 18, 19, 6, 13,
+					15, 5, 9, 1, 14];
+		for(var i=0; i<indx.length/5; i++) {
+			var locPt = [];
+			for(var j=0; j<5; j++) {
+				var k = indx[i*5+j];
+				locPt.push(pts[3*k  ]);
+				locPt.push(pts[3*k+1]);
+				locPt.push(pts[3*k+2]);
+			}
+			polygons.push(new Polygon(locPt));
+		}
+	}
+
+	function bevelGeometry() {
+	}
+
+	function tick() {
+        requestAnimFrame(tick);
+		drawScene();
+		animate();
+	}
+
+    function webGLStart() {
+        var canvas = document.getElementById("civ6");
+        initGL(canvas);
+        initShaders();
+		initDodecahedron();
+        initBuffers();
+        initLigthing();
+
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.enable(gl.DEPTH_TEST);
+
+		var v1 = new Vertex(.3,.4,.5);
+
+		tick();
+    }
+
+
+</script>
+
+
+</head>
+
+
+<body onload="webGLStart();">
+    <canvas id="civ6" style="border: none;" width="500" height="500"></canvas>
+</body>
+
+</html>
