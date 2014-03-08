@@ -64,6 +64,25 @@
 		this.nor[0] /= len;
 		this.nor[1] /= len;
 		this.nor[2] /= len;
+
+		var centroid = [0,0,0];
+		var k=0;
+		for(var i=0; i<pts.length/3; i++) {
+			centroid[0] += pts[k++];
+			centroid[1] += pts[k++];
+			centroid[2] += pts[k++];
+		}
+		centroid[0] /= pts.length/3;
+		centroid[1] /= pts.length/3;
+		centroid[2] /= pts.length/3;
+
+		var c = new Vertex(centroid[0], centroid[1], centroid[2]);
+		var n = new Vertex(this.nor[0], this.nor[1], this.nor[2]);
+		var d = c.dot(n);
+		if(d<0) {
+			// alert("normal pointing the wrong way!");
+			// document.write("<br>normal pointing the wrong way!<br>");
+		}
 		// document.write("<br>" + this.nor[0] + ", " + this.nor[1] + ", " + this.nor[2]);
 		/*
 		for (var i in this.pts) {
@@ -265,7 +284,7 @@
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
 		// setup camera
-        mat4.perspective(60, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+        mat4.perspective(35, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
         mat4.identity(mvMatrix);
         mat4.translate(mvMatrix, [0.0, 0.0, -camR]);
         mat4.rotate(mvMatrix, -camPhi, [1.0, 0.0, 0.0]);
@@ -304,6 +323,10 @@
 	}
 
 	var polygons = [];
+	var vertices = [];
+	var faces    = [];
+	var geosidicFace = [];
+	var edges    = [];
 	function initDodecahedron() {
 		var phi = (1+Math.sqrt(5.0))/2.0;
 		var pts = [ 1.0, 1.0, 1.0, 
@@ -370,17 +393,201 @@
                     1,  8,  6,      3,  6, 10,      3,  7,  6,      3, 11,  7,  
                     4, 10,  8,      5,  9, 11,      6,  8, 10,      7, 11,  9];
 
+		for(var i=0; i<pts.length/3; i++)
+			vertices.push(new Vertex(pts[3*i], pts[3*i+1], pts[3*i+2]));
+
 		for(var i=0; i<indx.length/3; i++) {
 			var locPt = [];
+			var locVert = [];
 			for(var j=0; j<3; j++) {
 				var k = indx[i*3+j];
 				locPt.push(pts[3*k  ]);
 				locPt.push(pts[3*k+1]);
 				locPt.push(pts[3*k+2]);
+				locVert.push(vertices[k]);
 			}
 			polygons.push(new Polygon(locPt));
+			var f = new Face(locVert);
+			faces.push(f);
+			var newE;
+			for(var j=0; j<3; j++) {
+				newE = new Edge(locVert[j], locVert[(j+1)%3]);
+				newE.face.push(f);
+				var found = false;
+				for(var k in edges) {
+					if(newE.equals(edges[k])) {
+						newE = edges[k];
+						newE.face.push(f);
+						found = true;
+						break;
+					}
+				}
+				if(!found)
+					edges.push(newE);
+				f.edge.push(newE);
+			}
 		}
+
+		/*  debugging output
+		for(var i in faces) {
+			document.write("<br>Face #"+i+":");
+			for(var j in faces[i].edge) {
+				var edgeI = -1;
+				for(var k in edges)
+					if(faces[i].edge[j].equals(edges[k]))
+						edgeI = k;
+				document.write("<br>&nbsp &nbsp edge #"+edgeI+":&nbsp");
+				var ptI = -1;
+				for(var k in vertices)
+					if(faces[i].edge[j].vertex[0].equals(vertices[k]))
+						ptI = k;
+				document.write(ptI + ", ");
+				for(var k in vertices)
+					if(faces[i].edge[j].vertex[1].equals(vertices[k]))
+						ptI = k;
+				document.write("" + ptI);
+				if(faces[i].edge[j].face[1].equals(faces[i]))
+					document.write(" (-1)");
+			}
+		}
+		*/
     }
+
+	function makeGeosidic(n,m) {
+		// make sure n is always the biggest number
+		if(n < m) {
+			tmp = m; m = n; n = tmp;
+		}
+		if(m == 0) { // paralell type subdivision
+			for(var i in edges) {
+				for(var t=1; t<n; t++) {
+					var p1 = edges[i].vertex[0].mult(1.0*(n-t)/n);
+					var p2 = edges[i].vertex[1].mult(1.0*( t )/n);
+					var p  = p1.add(p2);
+					// var p1 = edges[i].vertex[0];
+					// var p2 = edges[i].vertex[1];
+					// var p  = new Vertex((p1.x[0]*(1-t) + p2.x[0]*t)/n, 
+					                    // (p1.x[1]*(1-t) + p2.x[1]*t)/n, 
+					                    // (p1.x[2]*(1-t) + p2.x[2]*t)/n);
+					// document.write("INSERTING INTERIOR POINT in i=" + i + " p = (" + p + ")<br>");
+					edges[i].intVertices.push(p);
+					vertices.push(p);
+				}
+				// for(var k in edges[i].intVertices)
+					// document.write("&nbsp " + edges[i].intVertices[k] + "<br>");
+			}
+			for(var i in faces) {
+				for(var t=1; t<n-1; t++) {
+					for(var s=1; s<n-t; s++) {
+						var z1 = 1.0*t/n;
+						var z2 = 1.0*s/n;
+						var z3 = 1.0 - z1 - z2;
+						var p1 = faces[i].vertices[0].mult(z1);
+						var p2 = faces[i].vertices[1].mult(z2);
+						var p3 = faces[i].vertices[2].mult(z3);
+						var pp = p1.add(p2);
+						var p  = pp.add(p3); // p = z1*p1 + z2*p2 + z3*p3
+						faces[i].intVertices.push(p);
+						vertices.push(p);
+					}
+				}
+				var e1 = faces[i].edge[0];
+				var e2 = faces[i].edge[1];
+				var e3 = faces[i].edge[2];
+				var e1Reverse = e1.face[1].equals(faces[i]);
+				var e2Reverse = e2.face[1].equals(faces[i]);
+				var e3Reverse = e3.face[1].equals(faces[i]);
+
+				var locSize = n+1;
+				var locVertices = [faces[i].vertices[2]];
+				for(var j=0; j<n-1; j++)
+					locVertices.push(e2.intVertices[(e2Reverse)?j:(n-j-2)]);
+				locVertices.push(faces[i].vertices[1])
+				for(var j=0; j<n-1; j++) {
+					locI = ((locSize+1)*locSize - (locSize-j)*(locSize-j-1))/2;
+					locVertices[locI] = e3.intVertices[(e3Reverse)?(n-j-2):j];
+				}
+				locI = 2*locSize-2;
+				for(var j=0; j<n-1; j++) {
+					locVertices[locI] = e1.intVertices[(e1Reverse)?j:(n-j-2)];
+					locI += locSize-j-2;
+				}
+				var locI = locSize+1;
+				var st   = 0;
+				for(var j=1; j<locSize-2; j++) {
+					for(var k=1; k<locSize-1-j; k++) {
+						locVertices[locI] = faces[i].intVertices[st++];
+						locI++;
+					}
+					locI+=2;
+				}
+				locVertices.push(faces[i].vertices[0]);
+
+				st = 0;
+				for(var j=0; j<locSize-1; j++) {
+					for(var k=0; k<locSize-1-j; k++) {
+						geosidicFace.push(new Face([locVertices[ st ],
+						                            locVertices[ st+(locSize-j)],
+						                            locVertices[ st+1 ]]));
+						st++;
+					}
+					st++;
+				}
+				st = locSize;
+				for(var j=1; j<locSize; j++) {
+					for(var k=0; k<locSize-1-j; k++) {
+						geosidicFace.push(new Face([locVertices[ st ],
+						                            locVertices[ st+1 ],
+						                            locVertices[ st-locSize+j]]));
+						st++;
+					}
+					st++;
+				}
+			}
+
+			polygons = [];
+			for(var i in geosidicFace)
+				polygons.push(new Polygon(geosidicFace[i].getVertexList()));
+		} else if(m == n) { // reflexible type
+		} else { // chirall patterns
+		}
+	}
+
+	function projectSphere() {
+		for(var i in vertices) {
+			vertices[i].normalize();
+			// document.write("<br>vertex #" + i + " has lenght " + vertices[i].len());
+		}
+		polygons = [];
+		for(var i in geosidicFace)
+			polygons.push(new Polygon(geosidicFace[i].getVertexList()));
+	}
+
+	function makeDualMesh() {
+		var finalVert = [];
+		var finalFace = [];
+		for(var i in geosidicFace) {
+			for(var j in geosidicFace[i].vertices) {
+				geosidicFace[i].vertices[j].addFace(i);
+			}
+			finalVert.push(geosidicFace[i].getCentroid());
+		}
+		for(var i in vertices) {
+			var locVert = [];
+			for(var j in vertices[i].face) {
+				locVert.push(finalVert[vertices[i].face[j]]);
+			}
+			if(locVert.length>2)  {
+				var newF = new Face(locVert);
+				newF.reorganizePoints();
+				finalFace.push(newF);
+			}
+		}
+		polygons = [];
+		for(var i in finalFace) {
+			polygons.push(new Polygon(finalFace[i].getVertexList()));
+		}
+	}
 
 	function tick() {
         requestAnimFrame(tick);
@@ -393,6 +600,9 @@
         initGL(canvas);
         initShaders();
 		initIcosahedron();
+		makeGeosidic(5,0);
+		projectSphere();
+		makeDualMesh();
         initBuffers();
         initLigthing();
 
