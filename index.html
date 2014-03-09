@@ -33,6 +33,7 @@
 
     uniform vec3 uAmbientColor;
     uniform float uAmbientAmount;
+    uniform bool uAllBlack;
 
     void main(void) {
         gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
@@ -40,11 +41,16 @@
 		normalize(uLightingDirection);
 		vec3 diffuse = max(dot(n,uLightingDirection), 0.0) * uDiffuseColor;
 		vec3 ambient = uAmbientAmount * uAmbientColor;
-		vColor = .5*aNormal+.5;
+		if(uAllBlack) {
+			vColor = vec3(0,0,0);
+			gl_Position[2] -= 1e-4;
+		} else {
+			vColor = (diffuse + ambient) * aColor;
+			// vColor = aColor;
+			// vColor = .5*aNormal+.5;
+		}
 		// vColor = diffuse + uAmbientColor*uAmbientAmount;
-		// vColor = (diffuse + ambient) * aColor;
 		// vColor = .5*aVertexPosition + .5;
-		// vColor = aColor;
 		// vColor = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
     }
 </script>
@@ -80,7 +86,7 @@
 		var n = new Vertex(this.nor[0], this.nor[1], this.nor[2]);
 		var d = c.dot(n);
 		if(d<0) {
-			// alert("normal pointing the wrong way!");
+			// ALert("normal pointing the wrong way!");
 			// document.write("<br>normal pointing the wrong way!<br>");
 		}
 		// document.write("<br>" + this.nor[0] + ", " + this.nor[1] + ", " + this.nor[2]);
@@ -175,6 +181,8 @@
         shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
         shaderProgram.nMatrixUniform  = gl.getUniformLocation(shaderProgram,  "uNMatrix");
 
+		shaderProgram.allBlackUniform = gl.getUniformLocation(shaderProgram, "uAllBlack");
+
         shaderProgram.lightDirectionUniform = gl.getUniformLocation(shaderProgram,  "uLightingDirection");
         shaderProgram.diffuseAmountUniform  = gl.getUniformLocation(shaderProgram,  "uDiffuseAmount");
         shaderProgram.ambientAmountUniform  = gl.getUniformLocation(shaderProgram,  "uAmbientAmount");
@@ -200,36 +208,43 @@
     var vertexPositionBuffer;
     var colorBuffer;
     var normalBuffer;
-    var indexBuffer;
+    var faceIndexBuffer;
+    var lineIndexBuffer;
 
     function initBuffers() {
 		var vertices = [];
 		var color    = [];
 		var normal   = [];
-		var indices  = [];
+		var fIndices = [];
+		var lIndices = [];
 		var globI    = 0;
-		// document.write("<br>Starting");
 		for(var i in polygons) {
 			var sides = polygons[i].pts.length/3;
-			// document.write("<br>Polygon #" + i);
 			var col = [Math.random(), Math.random(), Math.random()];
 			for(var j=0; j<sides; j++) {
 				vertices.push(polygons[i].pts[3*j]);
 				vertices.push(polygons[i].pts[3*j+1]);
 				vertices.push(polygons[i].pts[3*j+2]);
 				// color.push(col[0]); color.push(col[1]); color.push(col[2]);
-				color.push(.8);
-				color.push(.1);
-				color.push(.3);
+				if(sides == 5) {
+					color.push(.9); color.push(.14); color.push(.14);
+				} else if(sides == 6) {
+					color.push(.8); color.push(.85); color.push(.1);
+				} else {
+					color.push(1); color.push(0); color.push(0);
+				}
 				normal.push(polygons[i].nor[0]);
 				normal.push(polygons[i].nor[1]);
 				normal.push(polygons[i].nor[2]);
-				// document.write("<br>  side #" + j);
 			}
 			for(var j=0; j<sides-2; j++) {
-				indices.push(globI + 0);
-				indices.push(globI + j+1);
-				indices.push(globI + j+2);
+				fIndices.push(globI + 0);
+				fIndices.push(globI + j+1);
+				fIndices.push(globI + j+2);
+			}
+			for(var j=0; j<sides; j++) {
+				lIndices.push(globI +  j         );
+				lIndices.push(globI + (j+1)%sides);
 			}
 			globI += sides;
 		}
@@ -252,21 +267,25 @@
         normalBuffer.itemSize = 3;
         normalBuffer.numItems = normal.length/3;
 
-		indexBuffer = gl.createBuffer();
-		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
-        indexBuffer.itemSize = 1;
-        indexBuffer.numItems = indices.length;
+		faceIndexBuffer = gl.createBuffer();
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, faceIndexBuffer);
+		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(fIndices), gl.STATIC_DRAW);
+        faceIndexBuffer.itemSize = 1;
+        faceIndexBuffer.numItems = fIndices.length;
 
-		// document.write("<br>ll done");
+		lineIndexBuffer = gl.createBuffer();
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineIndexBuffer);
+		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(lIndices), gl.STATIC_DRAW);
+        lineIndexBuffer.itemSize = 1;
+        lineIndexBuffer.numItems = lIndices.length;
     }
 
 	function initLigthing() {
-		var ambientAmount = 0.2
+		var ambientAmount = 0.15
 		var ambientColor = vec3.create([1.0, 1.0, 1.0]);
-		var diffuseAmount = 0.5
-		var diffuseColor = vec3.create([1.0, 1.0, 1.0]);
-		var lightDir     = vec3.create([-1.0, -1.0,  1.0]);
+		var diffuseAmount = 0.35
+		var diffuseColor = vec3.create([0.7, 0.7, 0.7]);
+		var lightDir     = vec3.create([-1.0, -1.0,  -1.0]);
 		// vec3.nomralize(lightDir);
         gl.uniform3fv(shaderProgram.lightDirectionUniform, lightDir);
         gl.uniform3fv(shaderProgram.ambientColorUniform, ambientColor);
@@ -302,12 +321,18 @@
         gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
         gl.vertexAttribPointer(shaderProgram.normalAttribute, normalBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
-		// set indices
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-		
-		// make drawcall
+		// push matrices
         setMatrixUniforms();
-        gl.drawElements(gl.TRIANGLES, indexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+
+		// draw faces
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, faceIndexBuffer);
+		gl.uniform1f(shaderProgram.allBlackUniform, false);
+        gl.drawElements(gl.TRIANGLES, faceIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+
+		// draw edges
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineIndexBuffer);
+		gl.uniform1f(shaderProgram.allBlackUniform, true);
+        gl.drawElements(gl.LINES, lineIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
     }
 
 	var lastTime = 0;
@@ -600,7 +625,7 @@
         initGL(canvas);
         initShaders();
 		initIcosahedron();
-		makeGeosidic(5,0);
+		makeGeosidic(11,0);
 		projectSphere();
 		makeDualMesh();
         initBuffers();
