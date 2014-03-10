@@ -1,7 +1,7 @@
 <html>
 
 <head>
-<title>Learning WebGL &mdash; lesson 1</title>
+<title>Civ 6: sphere tesselation by hexagons</title>
 <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
 
 <script type="text/javascript" src="glMatrix-0.9.5.min.js"></script>
@@ -11,48 +11,68 @@
 <script id="shader-fs" type="x-shader/x-fragment">
     precision mediump float;
     varying vec3 vColor;
+    varying vec2 vTexCoord;
+    uniform sampler2D uSampler;
+    uniform bool uAllBlack;
 
     void main(void) {
-        gl_FragColor = vec4(vColor.x, vColor.y, vColor.z, 1.0);
+		if(uAllBlack) {
+			gl_FragColor = vec4(0.4, 0.4, 0.4, 1.0);
+		} else {
+			// gl_FragColor = vec4(vColor.x, vColor.y, vColor.z, 1.0);
+			// gl_FragColor = vec4(vTexCoord.x, vTexCoord.y, 0.0, 1.0);
+        	// gl_FragColor = texture2D(uSampler, vTexCoord);
+			float alpha = 1.0;
+        	gl_FragColor = texture2D(uSampler, vec2(vTexCoord.s, vTexCoord.t))*alpha + vColor.rgbb*(1.0-alpha);
+        	// gl_FragColor = vColor.rgbb*(1.0-alpha);
+			gl_FragColor[3] = 1.0;
+		}
     }
 </script>
 
 <script id="shader-vs" type="x-shader/x-vertex">
-    attribute vec3 aVertexPosition;
-    attribute vec3 aColor;
-    attribute vec3 aNormal;
-    varying vec3 vColor;
-
-    uniform mat4 uMVMatrix;
-    uniform mat4 uPMatrix;
-    uniform mat3 uNMatrix;
-
-    uniform vec3 uLightingDirection;
-    uniform vec3 uDiffuseColor;
-    uniform float uDiffuseAmount;
-
-    uniform vec3 uAmbientColor;
-    uniform float uAmbientAmount;
-    uniform bool uAllBlack;
-
-    void main(void) {
-        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+	# define M_PI 3.1415926535
+	attribute vec3 aVertexPosition;
+	attribute vec3 aColor;
+	attribute vec3 aNormal;
+	attribute vec2 aTexCoord;
+	varying vec3 vColor;
+	varying vec2 vTexCoord;
+	
+	uniform mat4 uMVMatrix;
+	uniform mat4 uPMatrix;
+	uniform mat3 uNMatrix;
+	
+	uniform vec3 uLightingDirection;
+	uniform vec3 uDiffuseColor;
+	uniform float uDiffuseAmount;
+	
+	uniform vec3 uAmbientColor;
+	uniform float uAmbientAmount;
+	uniform bool uAllBlack;
+	
+	void main(void) {
+		// map stuff using MVP
+		gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
 		vec3 n = uNMatrix * aNormal;
+
+		// evaluate lighting
 		normalize(uLightingDirection);
 		vec3 diffuse = max(dot(n,uLightingDirection), 0.0) * uDiffuseColor;
 		vec3 ambient = uAmbientAmount * uAmbientColor;
+
+		// pass values on
+		vTexCoord = aTexCoord;
 		if(uAllBlack) {
 			vColor = vec3(0,0,0);
 			gl_Position[2] -= 1e-4;
 		} else {
-			vColor = (diffuse + ambient) * aColor;
-			// vColor = aColor;
+			// vColor     = vec3(theta/2.0/M_PI,phi/M_PI,0.0);
+			// vColor = (diffuse + ambient) * aColor;
+			vColor = aColor;
 			// vColor = .5*aNormal+.5;
 		}
-		// vColor = diffuse + uAmbientColor*uAmbientAmount;
-		// vColor = .5*aVertexPosition + .5;
-		// vColor = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
-    }
+	}
 </script>
 
 
@@ -177,6 +197,9 @@
         shaderProgram.normalAttribute = gl.getAttribLocation(shaderProgram, "aNormal");
         gl.enableVertexAttribArray(shaderProgram.normalAttribute);
 
+        shaderProgram.texCoordAttribute = gl.getAttribLocation(shaderProgram, "aTexCoord");
+        gl.enableVertexAttribArray(shaderProgram.texCoordAttribute);
+
         shaderProgram.pMatrixUniform  = gl.getUniformLocation(shaderProgram,  "uPMatrix");
         shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
         shaderProgram.nMatrixUniform  = gl.getUniformLocation(shaderProgram,  "uNMatrix");
@@ -188,6 +211,8 @@
         shaderProgram.ambientAmountUniform  = gl.getUniformLocation(shaderProgram,  "uAmbientAmount");
         shaderProgram.diffuseColorUniform   = gl.getUniformLocation(shaderProgram,  "uDiffuseColor");
         shaderProgram.ambientColorUniform   = gl.getUniformLocation(shaderProgram,  "uAmbientColor");
+
+        shaderProgram.samplerUniform = gl.getUniformLocation(shaderProgram, "uSampler");
     }
 
 
@@ -203,6 +228,12 @@
         gl.uniformMatrix3fv(shaderProgram.nMatrixUniform, false, normalMatrix);
     }
 
+	function sign(x) {
+		if(x < 0) return -1;
+		else if(x > 0) return 1;
+		else return 0;
+	}
+
 
 
     var vertexPositionBuffer;
@@ -217,14 +248,26 @@
 		var normal   = [];
 		var fIndices = [];
 		var lIndices = [];
+		var texCoords= [];
 		var globI    = 0;
 		for(var i in polygons) {
 			var sides = polygons[i].pts.length/3;
 			var col = [Math.random(), Math.random(), Math.random()];
+			var textureWrap = false;
 			for(var j=0; j<sides; j++) {
-				vertices.push(polygons[i].pts[3*j]);
-				vertices.push(polygons[i].pts[3*j+1]);
-				vertices.push(polygons[i].pts[3*j+2]);
+				var x = polygons[i].pts[3*j];
+				var y = polygons[i].pts[3*j+1];
+				var z = polygons[i].pts[3*j+2];
+				if(x<0 && sign(y)!=sign(polygons[i].pts[1]))
+					textureWrap = true;
+			}
+			for(var j=0; j<sides; j++) {
+				var x = polygons[i].pts[3*j];
+				var y = polygons[i].pts[3*j+1];
+				var z = polygons[i].pts[3*j+2];
+				vertices.push(x);
+				vertices.push(y);
+				vertices.push(z);
 				// color.push(col[0]); color.push(col[1]); color.push(col[2]);
 				if(sides == 5) {
 					color.push(.9); color.push(.14); color.push(.14);
@@ -236,6 +279,14 @@
 				normal.push(polygons[i].nor[0]);
 				normal.push(polygons[i].nor[1]);
 				normal.push(polygons[i].nor[2]);
+				var r     = Math.sqrt(x*x+y*y);
+				var theta = Math.atan2(y,x)+Math.PI;
+				var phi   = Math.atan2(r,z);
+				if(textureWrap && y < 0)
+					texCoords.push((theta+2*Math.PI) / 2.0 / Math.PI);
+				else
+					texCoords.push(theta / 2.0 / Math.PI);
+				texCoords.push(phi   / 1.0 / Math.PI);
 			}
 			for(var j=0; j<sides-2; j++) {
 				fIndices.push(globI + 0);
@@ -267,6 +318,12 @@
         normalBuffer.itemSize = 3;
         normalBuffer.numItems = normal.length/3;
 
+		texCoordBuffer = gl.createBuffer();
+		gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
+        texCoordBuffer.itemSize = 2;
+        texCoordBuffer.numItems = texCoords.length/2;
+
 		faceIndexBuffer = gl.createBuffer();
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, faceIndexBuffer);
 		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(fIndices), gl.STATIC_DRAW);
@@ -278,6 +335,7 @@
 		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(lIndices), gl.STATIC_DRAW);
         lineIndexBuffer.itemSize = 1;
         lineIndexBuffer.numItems = lIndices.length;
+
     }
 
 	function initLigthing() {
@@ -289,9 +347,28 @@
 		// vec3.nomralize(lightDir);
         gl.uniform3fv(shaderProgram.lightDirectionUniform, lightDir);
         gl.uniform3fv(shaderProgram.ambientColorUniform, ambientColor);
-        gl.uniform3fv(shaderProgram.diffuseColorUniform, diffuseColor);
+        gl.uniform3fv(shaderProgram.diff7seColorUniform, diffuseColor);
         gl.uniform1f(shaderProgram.diffuseAmountUniform, diffuseAmount);
         gl.uniform1f(shaderProgram.ambientAmountUniform, ambientAmount);
+	}
+
+	var worldTexture;
+	function initTextures() {
+		worldTexture       = gl.createTexture();
+		worldTexture.image = new Image();
+		worldTexture.image.onload = function() {
+			handleLoadedTexture(worldTexture);
+		}
+		worldTexture.image.src = "world1024.png";
+	}
+
+	function handleLoadedTexture(texture) {
+		gl.bindTexture(gl.TEXTURE_2D, texture);
+		// gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.bindTexture(gl.TEXTURE_2D, null);
 	}
 
 	var camR     = 5.0;
@@ -299,40 +376,47 @@
 	var camTheta = 0.00;
     function drawScene() {
 		// clear scene
-        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
 		// setup camera
-        mat4.perspective(35, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
-        mat4.identity(mvMatrix);
-        mat4.translate(mvMatrix, [0.0, 0.0, -camR]);
-        mat4.rotate(mvMatrix, -camPhi, [1.0, 0.0, 0.0]);
-        mat4.rotate(mvMatrix, camTheta, [0.0, 0.0, 1.0]);
-
+		mat4.perspective(35, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+		mat4.identity(mvMatrix);
+		mat4.translate(mvMatrix, [0.0, 0.0, -camR]);
+		mat4.rotate(mvMatrix, -camPhi, [1.0, 0.0, 0.0]);
+		mat4.rotate(mvMatrix, camTheta, [0.0, 0.0, 1.0]);
+		
 		// set color
-        gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
-        gl.vertexAttribPointer(shaderProgram.colorAttribute, colorBuffer.itemSize, gl.FLOAT, false, 0, 0);
+		gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+		gl.vertexAttribPointer(shaderProgram.colorAttribute, colorBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
 		// set position
-        gl.bindBuffer(gl.ARRAY_BUFFER, vertexPositionBuffer);
-        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, vertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+		gl.bindBuffer(gl.ARRAY_BUFFER, vertexPositionBuffer);
+		gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, vertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
 		// set normals
-        gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
-        gl.vertexAttribPointer(shaderProgram.normalAttribute, normalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+		gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+		gl.vertexAttribPointer(shaderProgram.normalAttribute, normalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+		// set texture
+		gl.activeTexture(gl.TEXTURE0);
+		gl.bindTexture(gl.TEXTURE_2D, worldTexture);
+		gl.uniform1i(shaderProgram.samplerUniform, 0);
+		gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+		gl.vertexAttribPointer(shaderProgram.texCoordAttribute, texCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
 		// push matrices
-        setMatrixUniforms();
-
+		setMatrixUniforms();
+		
 		// draw faces
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, faceIndexBuffer);
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, faceIndexBuffer);
 		gl.uniform1f(shaderProgram.allBlackUniform, false);
-        gl.drawElements(gl.TRIANGLES, faceIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
-
+		gl.drawElements(gl.TRIANGLES, faceIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+		
 		// draw edges
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineIndexBuffer);
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineIndexBuffer);
 		gl.uniform1f(shaderProgram.allBlackUniform, true);
-        gl.drawElements(gl.LINES, lineIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+		gl.drawElements(gl.LINES, lineIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
     }
 
 	var lastTime = 0;
@@ -341,9 +425,21 @@
 		if (lastTime != 0) {
 			var elapsed = nowTime - lastTime;
 
-			// camPhi   += 2*Math.PI*elapsed / 32000.0;
-			camTheta += 2*Math.PI*elapsed / 6000.0;
+			// camTheta += 2*Math.PI*elapsed / 9000.0;
 		}
+		// camPhi    = (Math.sin(nowTime / 7000.0)+1)*Math.PI*.35;
+		camPhi   -= deltaMouseY * .0001;
+		camTheta += deltaMouseX * .0001;
+		if(camPhi >= Math.PI)
+			camPhi = Math.PI - 1e-3;
+		else if(camPhi < 0)
+			camPhi = 1e-3;
+
+		// lastMouseX += deltaMouseX;
+		// lastMouseY += deltaMouseY;
+		// deltaMouseX = 0;
+		// deltaMouseY = 0;
+
 		lastTime = nowTime;
 	}
 
@@ -620,21 +716,54 @@
 		animate();
 	}
 
+/****        USER INPUT FUNCTIONS     ****/
+	var mouseDown = false;
+	var lastMouseX = null; 
+	var lastMouseY = null; 
+	var deltaMouseX = 0; 
+	var deltaMouseY = 0; 
+
+	function handleMouseDown(event) {
+		mouseDown = true;
+		lastMouseX = event.clientX;
+		lastMouseY = event.clientY;
+		deltaMouseX = 0;
+		deltaMouseY = 0;
+	}
+
+	function handleMouseUp(event) {
+		mouseDown = false
+	}
+
+	function handleMouseMove(event) {
+		if(!mouseDown) return;
+		var newX = event.clientX;
+		var newY = event.clientY;
+		
+		deltaMouseX = (newX - lastMouseX);
+		deltaMouseY = (newY - lastMouseY);
+
+	}
+
+
     function webGLStart() {
         var canvas = document.getElementById("civ6");
         initGL(canvas);
         initShaders();
 		initIcosahedron();
-		makeGeosidic(11,0);
+		makeGeosidic(16,0);
 		projectSphere();
 		makeDualMesh();
         initBuffers();
         initLigthing();
+        initTextures();
 
         gl.clearColor(0.0, 0.0, 0.0, 1.0);
         gl.enable(gl.DEPTH_TEST);
 
-		var v1 = new Vertex(.3,.4,.5);
+		canvas.onmousedown   = handleMouseDown;
+		document.onmouseup   = handleMouseUp;
+		document.onmousemove = handleMouseMove;
 
 		tick();
     }
@@ -647,7 +776,7 @@
 
 
 <body onload="webGLStart();">
-    <canvas id="civ6" style="border: none;" width="500" height="500"></canvas>
+    <canvas id="civ6" style="border: none;" width="800" height="800"></canvas>
 </body>
 
 </html>
