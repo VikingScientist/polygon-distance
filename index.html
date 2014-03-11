@@ -12,6 +12,7 @@
     precision mediump float;
     varying vec3 vColor;
     varying vec2 vTexCoord;
+    varying float vSelected;
     uniform sampler2D uSampler;
     uniform bool uAllBlack;
 
@@ -19,13 +20,20 @@
 		if(uAllBlack) {
 			gl_FragColor = vec4(0.4, 0.4, 0.4, 1.0);
 		} else {
-			// gl_FragColor = vec4(vColor.x, vColor.y, vColor.z, 1.0);
+			if(vSelected > 0.5) {
+				// gl_FragColor = vec4(1.4*vColor.xyz, 1.0);
+        		gl_FragColor = texture2D(uSampler, vTexCoord);
+				gl_FragColor.xyz *= 1.8*vSelected;
+			} else {
+        		gl_FragColor = texture2D(uSampler, vTexCoord);
+				// gl_FragColor = vec4(vColor.xyz, 1.0);
+			}
 			// gl_FragColor = vec4(vTexCoord.x, vTexCoord.y, 0.0, 1.0);
         	// gl_FragColor = texture2D(uSampler, vTexCoord);
-			float alpha = 1.0;
-        	gl_FragColor = texture2D(uSampler, vec2(vTexCoord.s, vTexCoord.t))*alpha + vColor.rgbb*(1.0-alpha);
-        	// gl_FragColor = vColor.rgbb*(1.0-alpha);
-			gl_FragColor[3] = 1.0;
+
+			// float alpha = 1.0;
+        	// gl_FragColor = texture2D(uSampler, vec2(vTexCoord.s, vTexCoord.t))*alpha + vColor.rgbb*(1.0-alpha);
+			// gl_FragColor[3] = 1.0;
 		}
     }
 </script>
@@ -36,8 +44,11 @@
 	attribute vec3 aColor;
 	attribute vec3 aNormal;
 	attribute vec2 aTexCoord;
+	attribute float aSelected;
+
 	varying vec3 vColor;
 	varying vec2 vTexCoord;
+	varying float vSelected;
 	
 	uniform mat4 uMVMatrix;
 	uniform mat4 uPMatrix;
@@ -52,6 +63,9 @@
 	uniform bool uAllBlack;
 	
 	void main(void) {
+		// set the point size (for helper points)
+		gl_PointSize = 3.0;
+
 		// map stuff using MVP
 		gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
 		vec3 n = uNMatrix * aNormal;
@@ -63,13 +77,14 @@
 
 		// pass values on
 		vTexCoord = aTexCoord;
+		vSelected = aSelected;
 		if(uAllBlack) {
 			vColor = vec3(0,0,0);
 			gl_Position[2] -= 1e-4;
 		} else {
 			// vColor     = vec3(theta/2.0/M_PI,phi/M_PI,0.0);
-			// vColor = (diffuse + ambient) * aColor;
-			vColor = aColor;
+			vColor = (diffuse + ambient) * aColor;
+			// vColor = aColor;
 			// vColor = .5*aNormal+.5;
 		}
 	}
@@ -79,36 +94,35 @@
 <script type="text/javascript">
 
 	function Polygon(pts) {
-		this.pts = pts;
-		var u = [pts[6]-pts[3], pts[7]-pts[4], pts[8]-pts[5]];
-		var v = [pts[3]-pts[0], pts[4]-pts[1], pts[5]-pts[2]];
-		// evaluate normal vector and normalize it
-		this.nor = [u[1]*v[2] - u[2]*v[1],
-		            u[2]*v[0] - u[0]*v[2],
-		            u[0]*v[1] - u[1]*v[0]];
-		var len = Math.sqrt(this.nor[0]*this.nor[0] + this.nor[1]*this.nor[1] + this.nor[2]*this.nor[2]);
-		this.nor[0] /= len;
-		this.nor[1] /= len;
-		this.nor[2] /= len;
+		this.pts      = pts;
+		this.nor      = vec3.create();
+		this.selected = 0;
+		this.neighbours = [];
 
-		var centroid = [0,0,0];
+		this.contains    = contains;
+		this.setSelected = setSelected;
+
+		this.centroid = vec3.create();
 		var k=0;
 		for(var i=0; i<pts.length/3; i++) {
-			centroid[0] += pts[k++];
-			centroid[1] += pts[k++];
-			centroid[2] += pts[k++];
+			this.centroid[0] += pts[k++];
+			this.centroid[1] += pts[k++];
+			this.centroid[2] += pts[k++];
 		}
-		centroid[0] /= pts.length/3;
-		centroid[1] /= pts.length/3;
-		centroid[2] /= pts.length/3;
+		this.centroid[0] /= pts.length/3;
+		this.centroid[1] /= pts.length/3;
+		this.centroid[2] /= pts.length/3;
 
-		var c = new Vertex(centroid[0], centroid[1], centroid[2]);
+		vec3.normalize(this.centroid, this.nor);
+
+		var c = new Vertex(this.centroid[0], this.centroid[1], this.centroid[2]);
 		var n = new Vertex(this.nor[0], this.nor[1], this.nor[2]);
 		var d = c.dot(n);
 		if(d<0) {
-			// ALert("normal pointing the wrong way!");
+			// alert("normal pointing the wrong way!");
 			// document.write("<br>normal pointing the wrong way!<br>");
 		}
+
 		// document.write("<br>" + this.nor[0] + ", " + this.nor[1] + ", " + this.nor[2]);
 		/*
 		for (var i in this.pts) {
@@ -119,6 +133,29 @@
 		document.write("<br>");
 		document.write("<br>");
 		*/
+
+		function contains(p) {
+			var sides = this.pts.length/3;
+			for(var i=0; i<sides; i++) {
+				var p1 = vec3.create([this.pts[i*3], this.pts[i*3+1], this.pts[i*3+2]]);
+				var p2 = vec3.create([this.pts[(i+1)%sides*3], this.pts[(i+1)%sides*3+1], this.pts[(i+1)%sides*3+2]]);
+				var cross = vec3.create();
+				vec3.subtract(p2, p1);
+				vec3.subtract(p1, p);
+				vec3.scale(p1, -1.0);
+				vec3.cross(p2, p1, cross);
+				if(vec3.dot(cross, this.nor) < 0)
+					return false;
+			}
+			return true;
+		}
+
+		function setSelected(n) {
+			this.selected = n;
+			for(var i in this.neighbours)
+				if(this.neighbours[i].selected < n-1)
+					this.neighbours[i].setSelected(n-1);
+		}
 	}
 
     var gl;
@@ -197,6 +234,9 @@
         shaderProgram.normalAttribute = gl.getAttribLocation(shaderProgram, "aNormal");
         gl.enableVertexAttribArray(shaderProgram.normalAttribute);
 
+        shaderProgram.selectedAttribute = gl.getAttribLocation(shaderProgram, "aSelected");
+        gl.enableVertexAttribArray(shaderProgram.selectedAttribute);
+
         shaderProgram.texCoordAttribute = gl.getAttribLocation(shaderProgram, "aTexCoord");
         gl.enableVertexAttribArray(shaderProgram.texCoordAttribute);
 
@@ -234,13 +274,13 @@
 		else return 0;
 	}
 
-
-
     var vertexPositionBuffer;
     var colorBuffer;
     var normalBuffer;
     var faceIndexBuffer;
     var lineIndexBuffer;
+    var selectedBuffer;
+    var helperPositionBuffer = null;
 
     function initBuffers() {
 		var vertices = [];
@@ -252,7 +292,6 @@
 		var globI    = 0;
 		for(var i in polygons) {
 			var sides = polygons[i].pts.length/3;
-			var col = [Math.random(), Math.random(), Math.random()];
 			var textureWrap = false;
 			for(var j=0; j<sides; j++) {
 				var x = polygons[i].pts[3*j];
@@ -268,7 +307,6 @@
 				vertices.push(x);
 				vertices.push(y);
 				vertices.push(z);
-				// color.push(col[0]); color.push(col[1]); color.push(col[2]);
 				if(sides == 5) {
 					color.push(.9); color.push(.14); color.push(.14);
 				} else if(sides == 6) {
@@ -336,20 +374,36 @@
         lineIndexBuffer.itemSize = 1;
         lineIndexBuffer.numItems = lIndices.length;
 
+		updateBuffer();
+
     }
+
+	function updateBuffer() {
+		var selected = [];
+		for(var i in polygons) {
+			var sides = polygons[i].pts.length/3;
+			for(var j=0; j<sides; j++)
+				selected.push(polygons[i].selected);
+		}
+        selectedBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, selectedBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(selected), gl.STATIC_DRAW);
+        selectedBuffer.itemSize = 1;
+        selectedBuffer.numItems = selected.length;
+	}
 
 	function initLigthing() {
 		var ambientAmount = 0.15
-		var ambientColor = vec3.create([1.0, 1.0, 1.0]);
+		var ambientColor  = vec3.create([1.0, 1.0, 1.0]);
 		var diffuseAmount = 0.35
-		var diffuseColor = vec3.create([0.7, 0.7, 0.7]);
-		var lightDir     = vec3.create([-1.0, -1.0,  -1.0]);
-		// vec3.nomralize(lightDir);
+		var diffuseColor  = vec3.create([0.7, 0.7, 0.7]);
+		var lightDir      = vec3.create([ 1.0,  1.0,   1.0]);
+		vec3.normalize(lightDir);
         gl.uniform3fv(shaderProgram.lightDirectionUniform, lightDir);
-        gl.uniform3fv(shaderProgram.ambientColorUniform, ambientColor);
-        gl.uniform3fv(shaderProgram.diff7seColorUniform, diffuseColor);
-        gl.uniform1f(shaderProgram.diffuseAmountUniform, diffuseAmount);
-        gl.uniform1f(shaderProgram.ambientAmountUniform, ambientAmount);
+        gl.uniform3fv(shaderProgram.ambientColorUniform,   ambientColor);
+        gl.uniform3fv(shaderProgram.diffuseColorUniform,   diffuseColor);
+        gl.uniform1f(shaderProgram.diffuseAmountUniform,   diffuseAmount);
+        gl.uniform1f(shaderProgram.ambientAmountUniform,   ambientAmount);
 	}
 
 	var worldTexture;
@@ -371,20 +425,22 @@
 		gl.bindTexture(gl.TEXTURE_2D, null);
 	}
 
-	var camR     = 5.0;
-	var camPhi   = Math.PI / 3;
+	var camR     = 7.0;
+	var camPhi   = Math.PI / 2;
 	var camTheta = 0.00;
+	var camAngle = 20;
     function drawScene() {
 		// clear scene
 		gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
 		// setup camera
-		mat4.perspective(35, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+		mat4.perspective(camAngle, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
 		mat4.identity(mvMatrix);
 		mat4.translate(mvMatrix, [0.0, 0.0, -camR]);
 		mat4.rotate(mvMatrix, -camPhi, [1.0, 0.0, 0.0]);
-		mat4.rotate(mvMatrix, camTheta, [0.0, 0.0, 1.0]);
+		mat4.rotateZ(mvMatrix, -camTheta);
+		mat4.rotateZ(mvMatrix, -Math.PI/2);
 		
 		// set color
 		gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
@@ -397,6 +453,10 @@
 		// set normals
 		gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
 		gl.vertexAttribPointer(shaderProgram.normalAttribute, normalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+		// set selection information
+		gl.bindBuffer(gl.ARRAY_BUFFER, selectedBuffer);
+		gl.vertexAttribPointer(shaderProgram.selectedAttribute, selectedBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
 		// set texture
 		gl.activeTexture(gl.TEXTURE0);
@@ -417,6 +477,13 @@
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineIndexBuffer);
 		gl.uniform1f(shaderProgram.allBlackUniform, true);
 		gl.drawElements(gl.LINES, lineIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+
+		// draw helper points
+		if(helperPositionBuffer != null) {
+			gl.bindBuffer(gl.ARRAY_BUFFER, helperPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, helperPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			gl.drawArrays(gl.POINTS, 0, helperPositionBuffer.numItems);
+		}
     }
 
 	var lastTime = 0;
@@ -428,17 +495,19 @@
 			// camTheta += 2*Math.PI*elapsed / 9000.0;
 		}
 		// camPhi    = (Math.sin(nowTime / 7000.0)+1)*Math.PI*.35;
-		camPhi   -= deltaMouseY * .0001;
-		camTheta += deltaMouseX * .0001;
+		camPhi   -= deltaMouseY * .003;
+		camTheta -= deltaMouseX * .003;
 		if(camPhi >= Math.PI)
 			camPhi = Math.PI - 1e-3;
 		else if(camPhi < 0)
 			camPhi = 1e-3;
 
-		// lastMouseX += deltaMouseX;
-		// lastMouseY += deltaMouseY;
-		// deltaMouseX = 0;
-		// deltaMouseY = 0;
+		if(mouseDown) {
+			lastMouseX += deltaMouseX;
+			lastMouseY += deltaMouseY;
+			deltaMouseX = 0;
+			deltaMouseY = 0;
+		}
 
 		lastTime = nowTime;
 	}
@@ -527,7 +596,7 @@
 				locPt.push(pts[3*k+2]);
 				locVert.push(vertices[k]);
 			}
-			polygons.push(new Polygon(locPt));
+			// polygons.push(new Polygon(locPt));
 			var f = new Face(locVert);
 			faces.push(f);
 			var newE;
@@ -585,17 +654,9 @@
 					var p1 = edges[i].vertex[0].mult(1.0*(n-t)/n);
 					var p2 = edges[i].vertex[1].mult(1.0*( t )/n);
 					var p  = p1.add(p2);
-					// var p1 = edges[i].vertex[0];
-					// var p2 = edges[i].vertex[1];
-					// var p  = new Vertex((p1.x[0]*(1-t) + p2.x[0]*t)/n, 
-					                    // (p1.x[1]*(1-t) + p2.x[1]*t)/n, 
-					                    // (p1.x[2]*(1-t) + p2.x[2]*t)/n);
-					// document.write("INSERTING INTERIOR POINT in i=" + i + " p = (" + p + ")<br>");
 					edges[i].intVertices.push(p);
 					vertices.push(p);
 				}
-				// for(var k in edges[i].intVertices)
-					// document.write("&nbsp " + edges[i].intVertices[k] + "<br>");
 			}
 			for(var i in faces) {
 				for(var t=1; t<n-1; t++) {
@@ -666,9 +727,9 @@
 				}
 			}
 
-			polygons = [];
-			for(var i in geosidicFace)
-				polygons.push(new Polygon(geosidicFace[i].getVertexList()));
+			// polygons = [];
+			// for(var i in geosidicFace)
+				// polygons.push(new Polygon(geosidicFace[i].getVertexList()));
 		} else if(m == n) { // reflexible type
 		} else { // chirall patterns
 		}
@@ -679,25 +740,40 @@
 			vertices[i].normalize();
 			// document.write("<br>vertex #" + i + " has lenght " + vertices[i].len());
 		}
-		polygons = [];
-		for(var i in geosidicFace)
-			polygons.push(new Polygon(geosidicFace[i].getVertexList()));
+		// polygons = [];
+		// for(var i in geosidicFace)
+			// polygons.push(new Polygon(geosidicFace[i].getVertexList()));
 	}
 
 	function makeDualMesh() {
 		var finalVert = [];
 		var finalFace = [];
+
+		// list all vertices face neighbours (dual mesh face circumference)
 		for(var i in geosidicFace) {
-			for(var j in geosidicFace[i].vertices) {
+			for(var j in geosidicFace[i].vertices)
 				geosidicFace[i].vertices[j].addFace(i);
-			}
 			finalVert.push(geosidicFace[i].getCentroid());
 		}
+		// list all vertex-vertex neighbours (dual mesh polygon-connectivity)
+		for(var i in vertices)
+			vertices[i].index = i;
+		for(var i in geosidicFace) {
+			for(var j=0; j<geosidicFace[i].vertices.length; j++) {
+				for(var k=j+1; k<geosidicFace[i].vertices.length; k++) {
+					var v1 = geosidicFace[i].vertices[j];
+					var v2 = geosidicFace[i].vertices[k];
+					v1.addVertex(v2.index);
+					v2.addVertex(v1.index);
+				}
+			}
+		}
+
+		// make polygons of all vertices
 		for(var i in vertices) {
 			var locVert = [];
-			for(var j in vertices[i].face) {
+			for(var j in vertices[i].face)
 				locVert.push(finalVert[vertices[i].face[j]]);
-			}
 			if(locVert.length>2)  {
 				var newF = new Face(locVert);
 				newF.reorganizePoints();
@@ -705,9 +781,11 @@
 			}
 		}
 		polygons = [];
-		for(var i in finalFace) {
+		for(var i in finalFace)
 			polygons.push(new Polygon(finalFace[i].getVertexList()));
-		}
+		for(var i in vertices)
+			for(var j in vertices[i].vertex)
+				polygons[i].neighbours.push(polygons[vertices[i].vertex[j]]);
 	}
 
 	function tick() {
@@ -716,42 +794,168 @@
 		animate();
 	}
 
-/****        USER INPUT FUNCTIONS     ****/
-	var mouseDown = false;
-	var lastMouseX = null; 
-	var lastMouseY = null; 
-	var deltaMouseX = 0; 
-	var deltaMouseY = 0; 
+/*******************************************************************/
+/***********       USER INPUT FUNCTIONS                   **********/
+/*******************************************************************/
+	var mouseDown      = false;
+	var lastMousePress = null;
+	var lastMouseX     = null; 
+	var lastMouseY     = null; 
+	var deltaMouseX    = 0; 
+	var deltaMouseY    = 0; 
 
-	function handleMouseDown(event) {
+	function click(x,y) {
+		var p = getPointAt(event.clientX-canvasX, event.clientY-canvasY);
+
+		for(var i in polygons)
+			polygons[i].selected = 0;
+
+		if(p == null) {
+        	helperPositionBuffer = null;
+			return;
+		} else {
+			var p1 = vec3.create([polygons[0].pts[0], polygons[0].pts[1], polygons[0].pts[2]]);
+			var p2 = vec3.create([polygons[0].pts[6], polygons[0].pts[7], polygons[0].pts[8]]);
+			vec3.subtract(p1,p2);
+			var h  = vec3.length(p1);
+			// alert("p1 = " + vec3.str(p1) + "\np2=" + vec3.str(p2) + "\ncharacteristic length = " + h);
+			var hits = 0;
+			for(var i in polygons) {
+				vec3.subtract(polygons[i].centroid, p, p1);
+				if(vec3.length(p1) < 3*h)
+					if(polygons[i].contains(p))
+						polygons[i].setSelected(3);
+			}
+			// alert(hits + " number of polygons hits within 3 times this limit");
+			// alert(hits + " number of polygons hits containing this point");
+	
+			/*
+			vec3.scale(p, 1.002);
+			var vertices = [p[0], p[1], p[2], 1.2,0,0, 0,1.2, 0, 0,0,1.2];
+        	helperPositionBuffer = gl.createBuffer();
+        	gl.bindBuffer(gl.ARRAY_BUFFER, helperPositionBuffer);
+        	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+        	helperPositionBuffer.itemSize = 3;
+        	helperPositionBuffer.numItems = 4;
+			*/
+		}
+		updateBuffer();
+	}
+
+	function press(x,y) {
 		mouseDown = true;
+		lastMousePress = new Date().getTime();
 		lastMouseX = event.clientX;
 		lastMouseY = event.clientY;
 		deltaMouseX = 0;
 		deltaMouseY = 0;
 	}
 
-	function handleMouseUp(event) {
+	function release(x,y) {
 		mouseDown = false
+		var nowTime = new Date().getTime();
+		if(nowTime - lastMousePress < 250)
+			click(x,y);
 	}
 
-	function handleMouseMove(event) {
+	function drag(x,y) {
 		if(!mouseDown) return;
 		var newX = event.clientX;
 		var newY = event.clientY;
 		
 		deltaMouseX = (newX - lastMouseX);
 		deltaMouseY = (newY - lastMouseY);
+	}
+
+	function getPointAt(x, y) {
+		var w = gl.viewportWidth;
+		var h = gl.viewportHeight;
+		var alpha = 2.0*(x-w/2.0)/w * camAngle / 360.0 * Math.PI;
+		var beta  = 2.0*(h/2.0-y)/h * camAngle / 360.0 * Math.PI;
+		var cam = vec3.create([camR*Math.cos(camTheta)*Math.sin(camPhi),
+		                       camR*Math.sin(camTheta)*Math.sin(camPhi),
+							   camR*Math.cos(camPhi)]);
+		var dir = vec3.create();
+		vec3.scale(cam, -1.0, dir);
+		vec3.normalize(dir);
+
+		// create the camera-scene ray for intersection purposes
+		var rot = mat4.create();
+		mat4.identity(rot);
+		mat4.rotate(rot, Math.PI/2, [-cam[1], cam[0], 0.0]);
+		var u = vec3.create();
+		var v = vec3.create();
+		mat4.multiplyVec3(rot, dir, u);
+		vec3.cross(dir, u, v);   // [u,v,dir] forms a basis for the screen plane in physical coordinates
+		mat4.identity(rot);
+		mat4.rotate(rot, beta,  v);
+		mat4.rotate(rot, -alpha, u);
+		mat4.multiplyVec3(rot, dir);  // dir is now rotated to go through the right pixel point
+
+		// solve a quadratic system to get the intersections with the sphere
+		var a = vec3.dot(dir,dir);
+		var b = vec3.dot(cam,dir)*2;
+		var c = vec3.dot(cam,cam) - 1;
+		if(4*a*c > b*b)
+			return null;
+
+		// the result is given as result = cam + t*dir
+		var t = (-b - Math.sqrt(b*b-4*a*c))/2.0/a;
+		var result = vec3.create();
+		vec3.scale(dir, t, result);
+		vec3.add(result, cam);
+		return result;
+
+		// alert("x="+x+"\ny="+y+"\nw="+w+"\nh="+h+"\ncamera: " + vec3.str(cam) + "\nlooking: " + vec3.str(dir) + "\nalpha=" + alpha + "\nbeta=" + beta + "\na=" + a + "\nb=" + b + "\nc=" + c + "\nsqrt = " + (b*b-4*a*c) + "\nHit: " + vec3.str(result) + "\nu="+vec3.str(u)+"\nv="+vec3.str(v));
 
 	}
 
+/*******************************************************************/
+/***********              MOUSE INPUT                     **********/
+/*******************************************************************/
+	function handleMouseDown(event) {
+		press(event.clientX-canvasX, event.clientY-canvasY);
+	}
 
+	function handleMouseUp(event) {
+		release(event.clientX-canvasX, event.clientY-canvasY);
+	}
+
+	function handleMouseMove(event) {
+		drag(event.clientX-canvasX, event.clientY-canvasY);
+	}
+
+/*******************************************************************/
+/***********              TOUCHSCREEN INPUT               **********/
+/*******************************************************************/
+	function handleTouchDown(event) {
+		if(event.touches.length != 1) return;
+		press(event.touches[0].clientX-canvasX, event.touches[0].clientY-canvasY);
+	}
+
+	function handleTouchUp(event) {
+		if(event.touches.length != 1) return;
+		release(event.touches[0].clientX-canvasX, event.touches[0].clientY-canvasY);
+	}
+
+	function handleTouchMove(event) {
+		if(event.touches.length != 1) return;
+		drag(event.touches[0].clientX-canvasX, event.touches[0].clientY-canvasY);
+	}
+
+
+
+	var canvasX;
+	var canvasY;
     function webGLStart() {
         var canvas = document.getElementById("civ6");
+		var boundingBox = canvas.getBoundingClientRect();
+		canvasX =  boundingBox.left;
+		canvasY =  boundingBox.top;
         initGL(canvas);
         initShaders();
 		initIcosahedron();
-		makeGeosidic(16,0);
+		makeGeosidic(15,0);
 		projectSphere();
 		makeDualMesh();
         initBuffers();
@@ -764,6 +968,10 @@
 		canvas.onmousedown   = handleMouseDown;
 		document.onmouseup   = handleMouseUp;
 		document.onmousemove = handleMouseMove;
+
+		canvas.ontouchstart    = handleTouchDown;
+		document.ontouchend    = handleTouchUp;
+		document.ontouchmove   = handleTouchMove;
 
 		tick();
     }

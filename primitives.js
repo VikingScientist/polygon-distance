@@ -3,19 +3,24 @@ function Vertex(x,y,z) {
 	// class variables
 	this.x = [x,y,z];
 	this.face = [];
+	this.vertex = [];
+	this.index= null;
 
 	// class functions
-	this.add    = add;
-	this.sub    = sub;
-	this.mult   = mult;
+	this.add        = add;
+	this.sub        = sub;
+	this.mult       = mult;
+	this.scale      = scale;
 	this.normalize  = normalize;
-	this.dot    = dot;
-	this.len    = len;
-	this.dist   = dist;
-	this.cross  = cross;
-	this.addFace= addFace;
-	this.equals = equals;
-	this.toString = toString;
+	this.dot        =  dot;
+	this.len        =  len;
+	this.dist       =  dist;
+	this.cross      =  cross;
+	this.addFace    =  addFace;
+	this.addVertex  =  addVertex;
+	this.equals     =  equals;
+	this.toString   =  toString;
+	this.copy       =  copy;
 
 	function add(p) {
 		return new Vertex(this.x[0]+p.x[0], this.x[1]+p.x[1], this.x[2]+p.x[2]);
@@ -29,7 +34,13 @@ function Vertex(x,y,z) {
 		return new Vertex(this.x[0]*a, this.x[1]*a, this.x[2]*a);
 	}
 
-	function normalize(a) {
+	function scale(a) {
+		this.x[0] *= a;
+		this.x[1] *= a;
+		this.x[2] *= a;
+	}
+
+	function normalize() {
 		var d = this.len();
 		this.x[0] /= d;
 		this.x[1] /= d;
@@ -65,11 +76,22 @@ function Vertex(x,y,z) {
 		this.face.push(f);
 	}
 
+	function addVertex(v) {
+		for(var i in this.vertex)
+			if(this.vertex[i] == v)
+				return;
+		this.vertex.push(v);
+	}
+
 	function equals(p) {
 		for(var i in this.x)
 			if(Math.abs(this.x[i] - p.x[i]) > 1e-10)
 				return false;
 		return true;
+	}
+
+	function copy() {
+		return new Vertex(this.x[0] , this.x[1] ,  this.x[2]);
 	}
 
 	function toString() {
