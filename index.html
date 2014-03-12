@@ -9,27 +9,30 @@
 <script type="text/javascript" src="primitives.js"></script>
 
 <script id="shader-fs" type="x-shader/x-fragment">
-    precision mediump float;
-    varying vec3 vColor;
-    varying vec2 vTexCoord;
-    varying float vSelected;
-    uniform sampler2D uSampler;
-    uniform bool uAllBlack;
-	uniform int uRenderType;
+	precision mediump float;
+	varying vec3 vColor;
+	varying vec2 vTexCoord;
+	varying float vSelected;
+	varying float vRenderType;
+	uniform sampler2D uSampler;
+	uniform bool uAllBlack;
+	// uniform int uRenderType;
 
-    void main(void) {
+	void main(void) {
 		if(uAllBlack) {
 			gl_FragColor = vec4(0.4, 0.4, 0.4, 1.0);
-		} else if(uRenderType == 2) {
-       		gl_FragColor = texture2D(uSampler, vTexCoord);
-			if(vSelected > 0.5)
+		} else if(vRenderType > 1.9 && vRenderType < 2.1) {
+			gl_FragColor = texture2D(uSampler, vTexCoord);
+			if(vSelected > 0.5) {
 				gl_FragColor.xyz *= 1.8*vSelected;
+			}
 		} else {
-       		gl_FragColor = vec4(vColor.rgb,1.0);
-			if(vSelected > 0.5)
+			gl_FragColor = vec4(vColor.rgb,1.0);
+			if(vSelected > 0.5) {
 				gl_FragColor.xyz *= 1.8*vSelected;
+			}
 		}
-    }
+	}
 </script>
 
 <script id="shader-vs" type="x-shader/x-vertex">
@@ -43,6 +46,7 @@
 	varying vec3 vColor;
 	varying vec2 vTexCoord;
 	varying float vSelected;
+	varying float vRenderType;
 	
 	uniform mat4 uMVMatrix;
 	uniform mat4 uPMatrix;
@@ -73,16 +77,16 @@
 		// pass values on
 		vTexCoord = aTexCoord;
 		vSelected = aSelected;
+		vRenderType = float(uRenderType);
 		if(uAllBlack) {
 			vColor = vec3(0,0,0);
 			gl_Position[2] -= 1e-4;
 		} else {
-			if(uRenderType == 1)
+			if(uRenderType == 1) {
 				vColor = .5*aNormal+.5;
-			else
+			} else {
 				vColor = (diffuse + ambient) * aColor;
-			// vColor     = vec3(theta/2.0/M_PI,phi/M_PI,0.0);
-			// vColor = aColor;
+			}
 		}
 	}
 </script>
@@ -941,8 +945,8 @@
 		var newSize = parseInt(document.getElementById("selectSize").value);
 		if(isNaN(newSize))
 			return;
-		if(newSize < 1 || newSize > 10) {
-			alert("Selection size must be between 1 and 10");
+		if(newSize < 1 || newSize > 30) {
+			alert("Selection size must be between 1 and 30");
 			return;
 		}
 		selectionSize = newSize;
@@ -961,15 +965,15 @@
 /***********              MOUSE INPUT                     **********/
 /*******************************************************************/
 	function handleMouseDown(event) {
-		press(event.clientX-canvasX, event.clientY-canvasY);
+		press(event.pageX-canvasX, event.pageY-canvasY);
 	}
 
 	function handleMouseUp(event) {
-		release(event.clientX-canvasX, event.clientY-canvasY);
+		release(event.pageX-canvasX, event.pageY-canvasY);
 	}
 
 	function handleMouseMove(event) {
-		drag(event.clientX-canvasX, event.clientY-canvasY);
+		drag(event.pageX-canvasX, event.pageY-canvasY);
 	}
 
 /*******************************************************************/
@@ -977,17 +981,17 @@
 /*******************************************************************/
 	function handleTouchDown(event) {
 		if(event.touches.length != 1) return;
-		press(event.touches[0].clientX-canvasX, event.touches[0].clientY-canvasY);
+		press(event.touches[0].pageX-canvasX, event.touches[0].pageY-canvasY);
 	}
 
 	function handleTouchUp(event) {
 		if(event.touches.length != 1) return;
-		release(event.touches[0].clientX-canvasX, event.touches[0].clientY-canvasY);
+		release(event.touches[0].pageX-canvasX, event.touches[0].pageY-canvasY);
 	}
 
 	function handleTouchMove(event) {
 		if(event.touches.length != 1) return;
-		drag(event.touches[0].clientX-canvasX, event.touches[0].clientY-canvasY);
+		drag(event.touches[0].pageX-canvasX, event.touches[0].pageY-canvasY);
 	}
 
 
@@ -1061,7 +1065,7 @@
 			<td>
 				<input type="radio" name="rendering" onclick="changeRender(this.value)" value="Type"> Tile type (pentagon/hexagon)<br>
 				<input type="radio" name="rendering" onclick="changeRender(this.value)" value="Earth" checked> Earth texture<br>
-				<input type="radio" name="rendering" onclick="changeRender(this.value)" value="Terrain">  Tiled terrain
+				<!-- <input type="radio" name="rendering" onclick="changeRender(this.value)" value="Terrain">  Tiled terrain -->
 			</td>
 		</tr>
 	</table>
