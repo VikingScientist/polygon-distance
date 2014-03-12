@@ -805,7 +805,7 @@
 	var deltaMouseY    = 0; 
 
 	function click(x,y) {
-		var p = getPointAt(event.clientX-canvasX, event.clientY-canvasY);
+		var p = getPointAt(x, y);
 
 		for(var i in polygons)
 			polygons[i].selected = 0;
@@ -845,8 +845,8 @@
 	function press(x,y) {
 		mouseDown = true;
 		lastMousePress = new Date().getTime();
-		lastMouseX = event.clientX;
-		lastMouseY = event.clientY;
+		lastMouseX = x;
+		lastMouseY = y;
 		deltaMouseX = 0;
 		deltaMouseY = 0;
 	}
@@ -860,8 +860,8 @@
 
 	function drag(x,y) {
 		if(!mouseDown) return;
-		var newX = event.clientX;
-		var newY = event.clientY;
+		var newX = x;
+		var newY = y;
 		
 		deltaMouseX = (newX - lastMouseX);
 		deltaMouseY = (newY - lastMouseY);
