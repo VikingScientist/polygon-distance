@@ -15,25 +15,19 @@
     varying float vSelected;
     uniform sampler2D uSampler;
     uniform bool uAllBlack;
+	uniform int uRenderType;
 
     void main(void) {
 		if(uAllBlack) {
 			gl_FragColor = vec4(0.4, 0.4, 0.4, 1.0);
-		} else {
-			if(vSelected > 0.5) {
-				// gl_FragColor = vec4(1.4*vColor.xyz, 1.0);
-        		gl_FragColor = texture2D(uSampler, vTexCoord);
+		} else if(uRenderType == 2) {
+       		gl_FragColor = texture2D(uSampler, vTexCoord);
+			if(vSelected > 0.5)
 				gl_FragColor.xyz *= 1.8*vSelected;
-			} else {
-        		gl_FragColor = texture2D(uSampler, vTexCoord);
-				// gl_FragColor = vec4(vColor.xyz, 1.0);
-			}
-			// gl_FragColor = vec4(vTexCoord.x, vTexCoord.y, 0.0, 1.0);
-        	// gl_FragColor = texture2D(uSampler, vTexCoord);
-
-			// float alpha = 1.0;
-        	// gl_FragColor = texture2D(uSampler, vec2(vTexCoord.s, vTexCoord.t))*alpha + vColor.rgbb*(1.0-alpha);
-			// gl_FragColor[3] = 1.0;
+		} else {
+       		gl_FragColor = vec4(vColor.rgb,1.0);
+			if(vSelected > 0.5)
+				gl_FragColor.xyz *= 1.8*vSelected;
 		}
     }
 </script>
@@ -61,6 +55,7 @@
 	uniform vec3 uAmbientColor;
 	uniform float uAmbientAmount;
 	uniform bool uAllBlack;
+	uniform int uRenderType;
 	
 	void main(void) {
 		// set the point size (for helper points)
@@ -82,10 +77,12 @@
 			vColor = vec3(0,0,0);
 			gl_Position[2] -= 1e-4;
 		} else {
+			if(uRenderType == 1)
+				vColor = .5*aNormal+.5;
+			else
+				vColor = (diffuse + ambient) * aColor;
 			// vColor     = vec3(theta/2.0/M_PI,phi/M_PI,0.0);
-			vColor = (diffuse + ambient) * aColor;
 			// vColor = aColor;
-			// vColor = .5*aNormal+.5;
 		}
 	}
 </script>
@@ -93,6 +90,7 @@
 
 <script type="text/javascript">
 
+	var selectionSize = 3;
 	function Polygon(pts) {
 		this.pts      = pts;
 		this.nor      = vec3.create();
@@ -244,7 +242,8 @@
         shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
         shaderProgram.nMatrixUniform  = gl.getUniformLocation(shaderProgram,  "uNMatrix");
 
-		shaderProgram.allBlackUniform = gl.getUniformLocation(shaderProgram, "uAllBlack");
+		shaderProgram.allBlackUniform   = gl.getUniformLocation(shaderProgram, "uAllBlack");
+		shaderProgram.renderTypeUniform = gl.getUniformLocation(shaderProgram, "uRenderType");
 
         shaderProgram.lightDirectionUniform = gl.getUniformLocation(shaderProgram,  "uLightingDirection");
         shaderProgram.diffuseAmountUniform  = gl.getUniformLocation(shaderProgram,  "uDiffuseAmount");
@@ -425,6 +424,14 @@
 		gl.bindTexture(gl.TEXTURE_2D, null);
 	}
 
+	function setTerrainData(img) {
+		var canvas = document.createElement('canvas');
+		var context = canvas.getContext('2d');
+		var img = document.getElementById('myimg');
+		context.drawImage(img, 0, 0 );
+		var myData = context.getImageData(0, 0, img.width, img.height);
+	}
+
 	var camR     = 7.0;
 	var camPhi   = Math.PI / 2;
 	var camTheta = 0.00;
@@ -564,6 +571,9 @@
 	}
 
 	function initIcosahedron() {
+		vertices = [];
+		faces    = [];
+		edges    = [];
 		var phi = (1+Math.sqrt(5.0))/2.0;
 		var pts = [ 0,   1,   phi, 
 		            0,  -1,   phi, 
@@ -644,6 +654,7 @@
     }
 
 	function makeGeosidic(n,m) {
+		geosidicFace = [];
 		// make sure n is always the biggest number
 		if(n < m) {
 			tmp = m; m = n; n = tmp;
@@ -824,7 +835,7 @@
 				vec3.subtract(polygons[i].centroid, p, p1);
 				if(vec3.length(p1) < 3*h)
 					if(polygons[i].contains(p))
-						polygons[i].setSelected(3);
+						polygons[i].setSelected(selectionSize);
 			}
 			// alert(hits + " number of polygons hits within 3 times this limit");
 			// alert(hits + " number of polygons hits containing this point");
@@ -910,6 +921,42 @@
 
 	}
 
+	function changeSize() {
+		var newSize = parseInt(document.getElementById("inputSize").value);
+		if(isNaN(newSize))
+			return;
+		if(newSize < 2 || newSize > 33) {
+			alert("Size must be between 2 and 33");
+			return;
+		}
+		initIcosahedron();
+		makeGeosidic(newSize,0);
+		projectSphere();
+		makeDualMesh();
+        initBuffers();
+        initTextures();
+	}
+
+	function changeSelection() {
+		var newSize = parseInt(document.getElementById("selectSize").value);
+		if(isNaN(newSize))
+			return;
+		if(newSize < 1 || newSize > 10) {
+			alert("Selection size must be between 1 and 10");
+			return;
+		}
+		selectionSize = newSize;
+	}
+
+	function changeRender(type) {
+		if(type == "Earth")
+        	gl.uniform1i(shaderProgram.renderTypeUniform, 2);
+		else if(type == "Type")
+        	gl.uniform1i(shaderProgram.renderTypeUniform, 3);
+		else if(type == "Terrain")
+        	gl.uniform1i(shaderProgram.renderTypeUniform, 1);
+	}
+
 /*******************************************************************/
 /***********              MOUSE INPUT                     **********/
 /*******************************************************************/
@@ -954,13 +1001,8 @@
 		canvasY =  boundingBox.top;
         initGL(canvas);
         initShaders();
-		initIcosahedron();
-		makeGeosidic(15,0);
-		projectSphere();
-		makeDualMesh();
-        initBuffers();
+		changeSize();
         initLigthing();
-        initTextures();
 
         gl.clearColor(0.0, 0.0, 0.0, 1.0);
         gl.enable(gl.DEPTH_TEST);
@@ -972,6 +1014,22 @@
 		canvas.ontouchstart    = handleTouchDown;
 		document.ontouchend    = handleTouchUp;
 		document.ontouchmove   = handleTouchMove;
+
+		// add listeners
+		if(window.addEventListener) {
+			document.getElementById("inputSize").addEventListener("change", changeSize, false);
+			document.getElementById("selectSize").addEventListener("change", changeSelection, false);
+		} else if (window.attachEvent){
+			document.getElementById("inputSize").attachEvent("onchange", changeSize);
+			document.getElementById("selectSize").attachEvent("onchange", changeSelection);
+		}
+
+		// set all selection to those given in the form
+		changeSelection(document.getElementById("selectSize").value);
+		var r = document.getElementsByName("rendering");
+		for(var i in r)
+			if(r[i].checked)
+				changeRender(r[i].value);
 
 		tick();
     }
@@ -985,6 +1043,28 @@
 
 <body onload="webGLStart();">
     <canvas id="civ6" style="border: none;" width="800" height="800"></canvas>
+
+	<p>
+    	Use mouse to spin the globe and click to select tiles and view neighbouring range
+	</p>
+	<table style="border:0; padding: 10px">
+		<tr>
+			<td> Globe size: </td>
+			<td> <input id="inputSize" type="text" id="size" value="10"/> </td>
+		</tr>
+		<tr>
+			<td> Selection size: </td>
+			<td> <input id="selectSize" type="text" id="size" value="3"/> </td>
+		</tr>
+		<tr>
+			<td> Rendering type: </td>
+			<td>
+				<input type="radio" name="rendering" onclick="changeRender(this.value)" value="Type"> Tile type (pentagon/hexagon)<br>
+				<input type="radio" name="rendering" onclick="changeRender(this.value)" value="Earth" checked> Earth texture<br>
+				<input type="radio" name="rendering" onclick="changeRender(this.value)" value="Terrain">  Tiled terrain
+			</td>
+		</tr>
+	</table>
 </body>
 
 </html>
