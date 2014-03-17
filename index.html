@@ -827,7 +827,6 @@
 
 		if(p == null) {
         	helperPositionBuffer = null;
-			return;
 		} else {
 			var p1 = vec3.create([polygons[0].pts[0], polygons[0].pts[1], polygons[0].pts[2]]);
 			var p2 = vec3.create([polygons[0].pts[6], polygons[0].pts[7], polygons[0].pts[8]]);
@@ -880,6 +879,13 @@
 		
 		deltaMouseX = (newX - lastMouseX);
 		deltaMouseY = (newY - lastMouseY);
+	}
+	
+	function wheel(n) { // scroll down is positive n
+		// alert("Mouse wheel " + n + " clicks");
+		camAngle += n;
+		camAngle = (camAngle>40) ? 40 : camAngle;
+		camAngle = (camAngle<5)  ? 5  : camAngle;
 	}
 
 	function getPointAt(x, y) {
@@ -976,6 +982,16 @@
 		drag(event.pageX-canvasX, event.pageY-canvasY);
 	}
 
+	function handleMouseWheel(event) {
+		wheel(-event.wheelDelta/120);
+		event.preventDefault();
+	}
+
+	function handleMouseWheelFireFox(event) {
+		wheel(event.detail/3);
+		event.preventDefault();
+	}
+
 /*******************************************************************/
 /***********              TOUCHSCREEN INPUT               **********/
 /*******************************************************************/
@@ -1011,15 +1027,20 @@
         gl.clearColor(0.0, 0.0, 0.0, 1.0);
         gl.enable(gl.DEPTH_TEST);
 
+		// add mouse and touch listeners
 		canvas.onmousedown   = handleMouseDown;
 		document.onmouseup   = handleMouseUp;
 		document.onmousemove = handleMouseMove;
+		canvas.ontouchstart  = handleTouchDown;
+		document.ontouchend  = handleTouchUp;
+		document.ontouchmove = handleTouchMove;
 
-		canvas.ontouchstart    = handleTouchDown;
-		document.ontouchend    = handleTouchUp;
-		document.ontouchmove   = handleTouchMove;
+		if (/Firefox/i.test(navigator.userAgent)) //FF doesn't recognize mousewheel as of FF3.x
+			canvas.addEventListener("DOMMouseScroll", handleMouseWheelFireFox, false);
+		else
+			canvas.onmousewheel  = handleMouseWheel;
 
-		// add listeners
+		// add input form listeners
 		if(window.addEventListener) {
 			document.getElementById("inputSize").addEventListener("change", changeSize, false);
 			document.getElementById("selectSize").addEventListener("change", changeSelection, false);
@@ -1049,7 +1070,7 @@
     <canvas id="civ6" style="border: none;" width="800" height="800"></canvas>
 
 	<p>
-    	This is an illustration of how distances would look on a Goldberg Polyhedron tessellation of the globe. Initial inspiration came from the reddit thread <a href="http://www.reddit.com/r/civ/comments/1zgmbo/civ_6_could_include_a_hexagon_tessellated_sphere/">Civ VI could include a hexagon tessalated sphere</a>. It is not exclusively hexagons however, since 12 pentagons will always be present which will disrupt the otherwise structured mesh. Hold mouse to spin the globe and click to select tiles and view neighbouring range; especially around the pentagons.
+    	This is an illustration of how distances would look on a Goldberg Polyhedron tessellation of the globe. Initial inspiration came from the reddit thread <a href="http://www.reddit.com/r/civ/comments/1zgmbo/civ_6_could_include_a_hexagon_tessellated_sphere/">Civ VI could include a hexagon tessalated sphere</a>. It is not exclusively hexagons however, since 12 pentagons will always be present which will disrupt the otherwise structured mesh. Hold mouse to spin the globe and click to select tiles and view neighbouring range; especially around the pentagons. Mouse wheel zooms in/out.
 	</p>
 	<table style="border:0; padding: 10px">
 		<tr>
